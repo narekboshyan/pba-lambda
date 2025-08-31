@@ -1,4 +1,3 @@
-# .github/workflows/deploy.yml
 name: Deploy pba-lambda to AWS
 
 on:
@@ -22,18 +21,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "yarn"
+          cache: yarn
 
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
       - name: Run tests
         run: yarn test
-        continue-on-error: true # Remove if you have tests
+        continue-on-error: true
 
       - name: Run linting
         run: yarn lint
-        continue-on-error: true # Remove if you have linting
+        continue-on-error: true
 
       - name: TypeScript check
         run: yarn build
@@ -41,14 +40,19 @@ jobs:
   deploy:
     needs: test
     runs-on: ubuntu-latest
+    # keep your branch gate
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
 
-    strategy:
-      matrix:
-        environment:
-          - ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    # 👇 this is what "attaches" the job to your Environment
+    environment: production
 
-    environment: ${{ matrix.environment }}
+    # expose Environment Variables to shell steps
+    env:
+      INPUT_BUCKET: ${{ vars.INPUT_BUCKET }}
+      OUTPUT_BUCKET: ${{ vars.OUTPUT_BUCKET }}
+      PREFIX: ${{ vars.PREFIX }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      CDK_STACK_NAME: ${{ vars.CDK_STACK_NAME }}
 
     steps:
       - name: Checkout code
@@ -58,74 +62,56 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
+          cache: yarn
 
       - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+        run: yarn install --frozen-lockfile
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }} # from Environment: production
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }} # from Environment: production
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Install CDK CLI
-        run: yarn global add aws-cdk@latest
+        run: npm i -g aws-cdk@2 && cdk --version
 
       - name: CDK Bootstrap (if needed)
         run: |
-          # Check if CDK is already bootstrapped
-          if ! aws cloudformation describe-stacks --stack-name CDKToolkit --region ${{ env.AWS_REGION }} 2>/dev/null; then
+          if ! aws cloudformation describe-stacks --stack-name CDKToolkit --region "${{ env.AWS_REGION }}" >/dev/null 2>&1; then
             echo "Bootstrapping CDK..."
-            cdk bootstrap aws://${{ secrets.AWS_ACCOUNT_ID }}/${{ env.AWS_REGION }}
+            cdk bootstrap "aws://${AWS_ACCOUNT_ID}/${{ env.AWS_REGION }}"
           else
             echo "CDK already bootstrapped"
           fi
 
       - name: CDK Synth
-        run: cdk synth
+        run: cdk synth --context environment=production
 
       - name: CDK Diff
         run: |
           echo "## CDK Diff" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          cdk diff --context environment=${{ matrix.environment }} >> $GITHUB_STEP_SUMMARY || true
+          cdk diff --context environment=production >> $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: CDK Deploy
         run: |
-          # Set bucket names based on environment
-          if [ "${{ matrix.environment }}" == "production" ]; then
-            INPUT_BUCKET="pba-bucket-prod"
-            OUTPUT_BUCKET="pba-bucket-prod"
-          else
-            INPUT_BUCKET="pba-bucket-staging"
-            OUTPUT_BUCKET="pba-bucket-staging"
-          fi
-
           cdk deploy \
             --require-approval never \
-            --context environment=${{ matrix.environment }} \
+            --context environment=production \
             --context inputBucket="${INPUT_BUCKET}" \
             --context outputBucket="${OUTPUT_BUCKET}" \
-            --context prefix="OnlineCourses/"
+            --context prefix="${PREFIX}"
 
       - name: Get deployment outputs
         run: |
           echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
-          echo "Environment: ${{ matrix.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "Environment: production" >> $GITHUB_STEP_SUMMARY
           echo "Region: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
-
-          # Get stack outputs
-          STACK_NAME="Mp4ToHlsStack"
           aws cloudformation describe-stacks \
-            --stack-name $STACK_NAME \
+            --stack-name "${CDK_STACK_NAME:-Mp4ToHlsStack}" \
             --query 'Stacks[0].Outputs' \
             --output table >> $GITHUB_STEP_SUMMARY || true
 
@@ -133,7 +119,8 @@ jobs:
     needs: deploy
     runs-on: ubuntu-latest
     if: failure() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-
+    # attach to production so env-scoped secrets are available here too
+    environment: production
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -145,4 +132,4 @@ jobs:
       - name: Notify failure
         run: |
           echo "Deployment failed. Manual cleanup may be required."
-          echo "Check CloudFormation stack: Mp4ToHlsStack"
+          echo "Check CloudFormation stack: ${CDK_STACK_NAME:-Mp4ToHlsStack}"
