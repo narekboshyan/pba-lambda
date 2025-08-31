@@ -1,0 +1,133 @@
+name: Deploy pba-lambda to AWS
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+  NODE_VERSION: "20"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+        continue-on-error: true # Remove if you have tests
+
+      - name: Run linting
+        run: npm run lint
+        continue-on-error: true # Remove if you have linting
+
+      - name: TypeScript check
+        run: npm run build
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+
+    strategy:
+      matrix:
+        environment:
+          - ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+
+    environment: ${{ matrix.environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install CDK CLI
+        run: npm install -g aws-cdk@latest
+
+      - name: CDK Bootstrap (if needed)
+        run: |
+          # Check if CDK is already bootstrapped
+          if ! aws cloudformation describe-stacks --stack-name CDKToolkit --region ${{ env.AWS_REGION }} 2>/dev/null; then
+            echo "Bootstrapping CDK..."
+            cdk bootstrap aws://${{ secrets.AWS_ACCOUNT_ID }}/${{ env.AWS_REGION }}
+          else
+            echo "CDK already bootstrapped"
+          fi
+
+      - name: CDK Synth
+        run: cdk synth
+
+      - name: CDK Diff
+        run: |
+          echo "## CDK Diff" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cdk diff --context environment=${{ matrix.environment }} >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: CDK Deploy
+        run: |
+          cdk deploy \
+            --require-approval never \
+            --context environment=${{ matrix.environment }} \
+            --context inputBucket=${{ vars.INPUT_BUCKET_NAME }} \
+            --context outputBucket=${{ vars.OUTPUT_BUCKET_NAME }} \
+            --context prefix=${{ vars.S3_PREFIX || 'OnlineCourses/' }}
+
+      - name: Get deployment outputs
+        run: |
+          echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Environment: ${{ matrix.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "Region: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+
+          # Get stack outputs
+          STACK_NAME="Mp4ToHlsStack"
+          aws cloudformation describe-stacks \
+            --stack-name $STACK_NAME \
+            --query 'Stacks[0].Outputs' \
+            --output table >> $GITHUB_STEP_SUMMARY || true
+
+  cleanup-on-failure:
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: failure() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Notify failure
+        run: |
+          echo "Deployment failed. Manual cleanup may be required."
+          echo "Check CloudFormation stack: Mp4ToHlsStack"
