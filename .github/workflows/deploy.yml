@@ -1,3 +1,4 @@
+# .github/workflows/deploy.yml
 name: Deploy pba-lambda to AWS
 
 on:
@@ -21,21 +22,21 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
+          cache: "yarn"
 
       - name: Install dependencies
-        run: npm ci
+        run: yarn install --frozen-lockfile
 
       - name: Run tests
-        run: npm test
+        run: yarn test
         continue-on-error: true # Remove if you have tests
 
       - name: Run linting
-        run: npm run lint
+        run: yarn lint
         continue-on-error: true # Remove if you have linting
 
       - name: TypeScript check
-        run: npm run build
+        run: yarn build
 
   deploy:
     needs: test
@@ -60,7 +61,12 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -70,7 +76,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Install CDK CLI
-        run: npm install -g aws-cdk@latest
+        run: yarn global add aws-cdk@latest
 
       - name: CDK Bootstrap (if needed)
         run: |
@@ -94,12 +100,21 @@ jobs:
 
       - name: CDK Deploy
         run: |
+          # Set bucket names based on environment
+          if [ "${{ matrix.environment }}" == "production" ]; then
+            INPUT_BUCKET="pba-bucket-prod"
+            OUTPUT_BUCKET="pba-bucket-prod"
+          else
+            INPUT_BUCKET="pba-bucket-staging"
+            OUTPUT_BUCKET="pba-bucket-staging"
+          fi
+
           cdk deploy \
             --require-approval never \
             --context environment=${{ matrix.environment }} \
-            --context inputBucket=${{ vars.INPUT_BUCKET_NAME }} \
-            --context outputBucket=${{ vars.OUTPUT_BUCKET_NAME }} \
-            --context prefix=${{ vars.S3_PREFIX || 'OnlineCourses/' }}
+            --context inputBucket="${INPUT_BUCKET}" \
+            --context outputBucket="${OUTPUT_BUCKET}" \
+            --context prefix="OnlineCourses/"
 
       - name: Get deployment outputs
         run: |
