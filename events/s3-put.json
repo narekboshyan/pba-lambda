@@ -1,0 +1,10 @@
+{
+  "Records": [
+    {
+      "s3": {
+        "bucket": { "name": "your-input-bucket" },
+        "object": { "key": "OnlineCourses/1/Level-1/Day-1/Video/12345.mp4" }
+      }
+    }
+  ]
+}
