@@ -12,5 +12,5 @@
     "resolveJsonModule": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*", "events/**/*"]
+  "include": ["src/**/*", "events/**/*", "lib/video-processor.ts", "handlers"]
 }
