@@ -1,5 +1,5 @@
 {
-  "app": "npx ts-node --prefer-ts-exts bin/mp4-to-hls.ts",
+  "app": "npx ts-node --prefer-ts-exts bin/app.ts",
   "context": {
     "@aws-cdk/core:fileAssetsBucketName": "cdk-bootstrap-assets-891377116317-us-east-1-v2"
   }

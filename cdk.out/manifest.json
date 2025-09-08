@@ -1,161 +1,209 @@
 {
   "version": "48.0.0",
   "artifacts": {
-    "Mp4ToHlsStack.assets": {
+    "VideoProcessingStack.assets": {
       "type": "cdk:asset-manifest",
       "properties": {
-        "file": "Mp4ToHlsStack.assets.json",
+        "file": "VideoProcessingStack.assets.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
       }
     },
-    "Mp4ToHlsStack": {
+    "VideoProcessingStack": {
       "type": "aws:cloudformation:stack",
-      "environment": "aws://891377116317/us-east-1",
+      "environment": "aws://unknown-account/eu-west-1",
       "properties": {
-        "templateFile": "Mp4ToHlsStack.template.json",
+        "templateFile": "VideoProcessingStack.template.json",
         "terminationProtection": false,
+        "tags": {
+          "Environment": "production",
+          "ManagedBy": "CDK",
+          "Project": "pba-video-processing"
+        },
         "validateOnSynth": false,
-        "assumeRoleArn": "arn:${AWS::Partition}:iam::891377116317:role/cdk-hnb659fds-deploy-role-891377116317-us-east-1",
-        "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::891377116317:role/cdk-hnb659fds-cfn-exec-role-891377116317-us-east-1",
-        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-891377116317-us-east-1/9ccdc20b01a2bafe9b5e3d106b2d8e083899156b67ec5c8191c9631052b837fa.json",
+        "assumeRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-deploy-role-${AWS::AccountId}-eu-west-1",
+        "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-cfn-exec-role-${AWS::AccountId}-eu-west-1",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-${AWS::AccountId}-eu-west-1/425c4c86d65262637600c940131634d5b9fc65402ad5dcad01e00776fb13c684.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
         "additionalDependencies": [
-          "Mp4ToHlsStack.assets"
+          "VideoProcessingStack.assets"
         ],
         "lookupRole": {
-          "arn": "arn:${AWS::Partition}:iam::891377116317:role/cdk-hnb659fds-lookup-role-891377116317-us-east-1",
+          "arn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-lookup-role-${AWS::AccountId}-eu-west-1",
           "requiresBootstrapStackVersion": 8,
           "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
         }
       },
       "dependencies": [
-        "Mp4ToHlsStack.assets"
+        "VideoProcessingStack.assets"
       ],
       "metadata": {
-        "/Mp4ToHlsStack/InputBucket/Notifications/Resource": [
+        "/VideoProcessingStack": [
           {
-            "type": "aws:cdk:logicalId",
-            "data": "InputBucketNotificationsA82F925B"
+            "type": "aws:cdk:stack-tags",
+            "data": [
+              {
+                "Key": "Environment",
+                "Value": "production"
+              },
+              {
+                "Key": "ManagedBy",
+                "Value": "CDK"
+              },
+              {
+                "Key": "Project",
+                "Value": "pba-video-processing"
+              }
+            ]
           }
         ],
-        "/Mp4ToHlsStack/InputBucket/AllowBucketNotificationsToMp4ToHlsStackTranscoderFnF36B2310": [
+        "/VideoProcessingStack/VideoProcessingBucket/Notifications/Resource": [
           {
             "type": "aws:cdk:logicalId",
-            "data": "InputBucketAllowBucketNotificationsToMp4ToHlsStackTranscoderFnF36B2310FC33242A"
+            "data": "VideoProcessingBucketNotificationsEB8EBE12"
           }
         ],
-        "/Mp4ToHlsStack/MediaConvertRole/Resource": [
+        "/VideoProcessingStack/VideoProcessingBucket/AllowBucketNotificationsToVideoProcessingStackVideoToHLSProcessorFunctionA5977A5C": [
           {
             "type": "aws:cdk:logicalId",
-            "data": "MediaConvertRole031A64A9"
+            "data": "VideoProcessingBucketAllowBucketNotificationsToVideoProcessingStackVideoToHLSProcessorFunctionA5977A5C161B6CA1"
           }
         ],
-        "/Mp4ToHlsStack/MediaConvertRole/DefaultPolicy/Resource": [
+        "/VideoProcessingStack/VideoToHLSProcessorFunction/ServiceRole/Resource": [
           {
             "type": "aws:cdk:logicalId",
-            "data": "MediaConvertRoleDefaultPolicy03164485"
+            "data": "VideoToHLSProcessorFunctionServiceRole5CD09B16"
           }
         ],
-        "/Mp4ToHlsStack/TranscoderFn/ServiceRole/Resource": [
+        "/VideoProcessingStack/VideoToHLSProcessorFunction/ServiceRole/DefaultPolicy/Resource": [
           {
             "type": "aws:cdk:logicalId",
-            "data": "TranscoderFnServiceRole6C1C41CF"
+            "data": "VideoToHLSProcessorFunctionServiceRoleDefaultPolicy8FFA4FB4"
           }
         ],
-        "/Mp4ToHlsStack/TranscoderFn/ServiceRole/DefaultPolicy/Resource": [
+        "/VideoProcessingStack/VideoToHLSProcessorFunction/Resource": [
           {
             "type": "aws:cdk:logicalId",
-            "data": "TranscoderFnServiceRoleDefaultPolicyEFE5E303"
+            "data": "VideoToHLSProcessorFunction7DE28E20"
           }
         ],
-        "/Mp4ToHlsStack/TranscoderFn/Resource": [
+        "/VideoProcessingStack/VideoToHLSProcessorFunction/LogRetention/Resource": [
           {
             "type": "aws:cdk:logicalId",
-            "data": "TranscoderFn0CD6748F"
+            "data": "VideoToHLSProcessorFunctionLogRetention3001C9C7"
           }
         ],
-        "/Mp4ToHlsStack/TranscoderFn/LogRetention/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "TranscoderFnLogRetentionA4ED72A8"
-          }
-        ],
-        "/Mp4ToHlsStack/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/Resource": [
+        "/VideoProcessingStack/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/Resource": [
           {
             "type": "aws:cdk:logicalId",
             "data": "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB"
           }
         ],
-        "/Mp4ToHlsStack/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/DefaultPolicy/Resource": [
+        "/VideoProcessingStack/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/DefaultPolicy/Resource": [
           {
             "type": "aws:cdk:logicalId",
             "data": "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB"
           }
         ],
-        "/Mp4ToHlsStack/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/Resource": [
+        "/VideoProcessingStack/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/Resource": [
           {
             "type": "aws:cdk:logicalId",
             "data": "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A"
           }
         ],
-        "/Mp4ToHlsStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/Resource": [
+        "/VideoProcessingStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/Resource": [
           {
             "type": "aws:cdk:logicalId",
             "data": "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC"
           }
         ],
-        "/Mp4ToHlsStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/DefaultPolicy/Resource": [
+        "/VideoProcessingStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/DefaultPolicy/Resource": [
           {
             "type": "aws:cdk:logicalId",
             "data": "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleDefaultPolicy2CF63D36"
           }
         ],
-        "/Mp4ToHlsStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Resource": [
+        "/VideoProcessingStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Resource": [
           {
             "type": "aws:cdk:logicalId",
             "data": "BucketNotificationsHandler050a0587b7544547bf325f094a3db8347ECC3691"
           }
         ],
-        "/Mp4ToHlsStack/TranscoderErrorsAlarm/Resource": [
+        "/VideoProcessingStack/VideoProcessingMonitoringDashboard/Resource": [
           {
             "type": "aws:cdk:logicalId",
-            "data": "TranscoderErrorsAlarmE92FE1FC"
+            "data": "VideoProcessingMonitoringDashboardF08218B3"
           }
         ],
-        "/Mp4ToHlsStack/MediaConvertRoleArn": [
+        "/VideoProcessingStack/VideoProcessingErrorAlarm/Resource": [
           {
             "type": "aws:cdk:logicalId",
-            "data": "MediaConvertRoleArn"
+            "data": "VideoProcessingErrorAlarmFA38D997"
           }
         ],
-        "/Mp4ToHlsStack/LambdaName": [
+        "/VideoProcessingStack/VideoProcessingDurationAlarm/Resource": [
           {
             "type": "aws:cdk:logicalId",
-            "data": "LambdaName"
+            "data": "VideoProcessingDurationAlarm82B6F19B"
           }
         ],
-        "/Mp4ToHlsStack/CDKMetadata/Default": [
+        "/VideoProcessingStack/VideoProcessorFunctionName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VideoProcessorFunctionName"
+          }
+        ],
+        "/VideoProcessingStack/VideoProcessorFunctionArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VideoProcessorFunctionArn"
+          }
+        ],
+        "/VideoProcessingStack/ProcessingBucketName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ProcessingBucketName"
+          }
+        ],
+        "/VideoProcessingStack/VideoUploadCommand": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VideoUploadCommand"
+          }
+        ],
+        "/VideoProcessingStack/ExpectedHLSOutputUrl": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ExpectedHLSOutputUrl"
+          }
+        ],
+        "/VideoProcessingStack/SupportedVideoQualities": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SupportedVideoQualities"
+          }
+        ],
+        "/VideoProcessingStack/CDKMetadata/Default": [
           {
             "type": "aws:cdk:logicalId",
             "data": "CDKMetadata"
           }
         ],
-        "/Mp4ToHlsStack/BootstrapVersion": [
+        "/VideoProcessingStack/BootstrapVersion": [
           {
             "type": "aws:cdk:logicalId",
             "data": "BootstrapVersion"
           }
         ],
-        "/Mp4ToHlsStack/CheckBootstrapVersion": [
+        "/VideoProcessingStack/CheckBootstrapVersion": [
           {
             "type": "aws:cdk:logicalId",
             "data": "CheckBootstrapVersion"
           }
         ]
       },
-      "displayName": "Mp4ToHlsStack"
+      "displayName": "VideoProcessingStack"
     },
     "Tree": {
       "type": "cdk:tree",
