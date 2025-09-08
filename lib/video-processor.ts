@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import * as cdk from "aws-cdk-lib";
-import { Duration, Stack, StackProps } from "aws-cdk-lib";
+import { Duration, RemovalPolicy, Stack, StackProps } from "aws-cdk-lib";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as lambdaNode from "aws-cdk-lib/aws-lambda-nodejs";
@@ -55,8 +55,12 @@ export class VideoProcessingStack extends Stack {
           FFMPEG_PATH: "/opt/bin/ffmpeg", // Path from the layer
           VIDEO_PROCESSING_BUCKET: props.bucketName,
           LOG_LEVEL: "INFO",
+          AWS_REGION: process.env.AWS_REGION || "us-east-1",
         },
-        logRetention: logs.RetentionDays.ONE_WEEK,
+        logGroup: new logs.LogGroup(this, "VideoProcessorLogGroup", {
+          retention: logs.RetentionDays.ONE_WEEK,
+          removalPolicy: RemovalPolicy.DESTROY,
+        }),
         bundling: {
           target: "node20",
           format: lambdaNode.OutputFormat.CJS,

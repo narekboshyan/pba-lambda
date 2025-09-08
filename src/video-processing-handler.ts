@@ -12,7 +12,9 @@ import { Readable } from "stream";
 const FFMPEG_PATH =
   process.env.FFMPEG_PATH || path.join(process.cwd(), "ffmpeg");
 
-const s3Client = new S3Client({});
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION || "us-east-1",
+});
 
 interface VideoProcessingResult {
   inputKey: string;

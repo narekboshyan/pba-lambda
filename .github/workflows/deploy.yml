@@ -73,7 +73,7 @@ jobs:
         run: |
           if ! aws cloudformation describe-stacks --stack-name CDKToolkit --region "${{ env.AWS_REGION }}" >/dev/null 2>&1; then
             echo "Bootstrapping CDK..."
-            cdk bootstrap "aws://${AWS_ACCOUNT_ID}/${{ env.AWS_REGION }}"
+            cdk bootstrap
           else
             echo "CDK already bootstrapped"
           fi
@@ -89,6 +89,10 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: CDK Deploy
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
         run: |
           cdk deploy \
             --require-approval never \
