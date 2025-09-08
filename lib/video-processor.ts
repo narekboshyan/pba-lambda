@@ -55,7 +55,6 @@ export class VideoProcessingStack extends Stack {
           FFMPEG_PATH: "/opt/bin/ffmpeg", // Path from the layer
           VIDEO_PROCESSING_BUCKET: props.bucketName,
           LOG_LEVEL: "INFO",
-          AWS_REGION: process.env.AWS_REGION || "us-east-1",
         },
         logGroup: new logs.LogGroup(this, "VideoProcessorLogGroup", {
           retention: logs.RetentionDays.ONE_WEEK,
