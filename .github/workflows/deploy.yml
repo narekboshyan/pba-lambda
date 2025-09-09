@@ -71,12 +71,26 @@ jobs:
 
       - name: CDK Bootstrap (force)
         run: |
-          echo "Re-bootstrapping CDK to create missing assets bucket..."
+          set -e  # Exit on any error
+          echo "=== CDK Bootstrap Debug Info ==="
+          echo "Current AWS Region: ${{ env.AWS_REGION }}"
+          echo "Current working directory: $(pwd)"
+          
+          echo "=== Checking AWS credentials ==="
+          aws sts get-caller-identity || exit 1
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           echo "Account ID: $ACCOUNT_ID"
-          echo "Region: ${{ env.AWS_REGION }}"
-          cdk bootstrap --force --verbose
-          echo "Bootstrap completed successfully"
+          
+          echo "=== Checking existing CDK bootstrap ==="
+          aws cloudformation describe-stacks --stack-name CDKToolkit --region "${{ env.AWS_REGION }}" || echo "CDKToolkit stack not found"
+          
+          echo "=== Starting CDK Bootstrap ==="
+          cdk bootstrap --force --verbose --debug
+          
+          echo "=== Verifying bootstrap success ==="
+          aws cloudformation describe-stacks --stack-name CDKToolkit --region "${{ env.AWS_REGION }}"
+          
+          echo "=== Bootstrap completed successfully ==="
 
       - name: CDK Synth
         run: cdk synth --context environment=production
@@ -88,11 +102,22 @@ jobs:
           cdk diff --context environment=production >> $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
 
+      - name: Verify Bootstrap Assets
+        run: |
+          echo "=== Verifying CDK assets bucket exists ==="
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET_NAME="cdk-hnb659fds-assets-${ACCOUNT_ID}-${{ env.AWS_REGION }}"
+          echo "Expected bucket name: $BUCKET_NAME"
+          
+          if aws s3 ls "s3://$BUCKET_NAME" >/dev/null 2>&1; then
+            echo "✅ Assets bucket exists: $BUCKET_NAME"
+          else
+            echo "❌ Assets bucket missing: $BUCKET_NAME"
+            echo "Re-running bootstrap..."
+            cdk bootstrap --force --verbose
+          fi
+
       - name: CDK Deploy
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ env.AWS_REGION }}
         run: |
           cdk deploy \
             --require-approval never \
