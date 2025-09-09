@@ -293,7 +293,7 @@ async function createAdaptiveMasterPlaylist(
 1080p/1080p.m3u8
 `;
 
-  const masterPlaylistPath = path.join(outputBaseDir, "index.m3u8");
+  const masterPlaylistPath = path.join(outputBaseDir, `${videoName}.m3u8`);
   await fs.writeFile(masterPlaylistPath, adaptiveMasterPlaylist, "utf8");
   console.log(`📋 Created adaptive master playlist: ${masterPlaylistPath}`);
 }
@@ -336,8 +336,8 @@ async function uploadHLSFilesToS3(
   };
 
   // Upload master playlist
-  const masterPlaylistLocalPath = path.join(localOutputDir, "index.m3u8");
-  const masterPlaylistS3Key = `${originalVideoDir}/${videoName}/index.m3u8`;
+  const masterPlaylistLocalPath = path.join(localOutputDir, `${videoName}.m3u8`);
+  const masterPlaylistS3Key = `${originalVideoDir}/${videoName}/${videoName}.m3u8`;
   await uploadSingleFile(masterPlaylistLocalPath, masterPlaylistS3Key);
 
   // Upload all quality renditions
@@ -362,7 +362,7 @@ function constructMasterPlaylistUrl(
   videoDirectory: string,
   videoName: string
 ): string {
-  return `https://${bucketName}.s3.amazonaws.com/${videoDirectory}/${videoName}/index.m3u8`;
+  return `https://${bucketName}.s3.amazonaws.com/${videoDirectory}/${videoName}/${videoName}.m3u8`;
 }
 
 function determineContentType(filePath: string): string {
