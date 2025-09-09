@@ -31,14 +31,6 @@ export class VideoProcessingStack extends Stack {
       props.bucketName
     );
 
-    // Lambda Layer for FFmpeg (using publicly available layer or custom)
-    const ffmpegLayer = lambda.LayerVersion.fromLayerVersionArn(
-      this,
-      "FFmpegVideoProcessingLayer",
-      // Public FFmpeg layer - replace with your own if needed
-      "arn:aws:lambda:us-east-1:533267207907:layer:ffmpeg:1"
-    );
-
     // Video processing Lambda function
     this.videoProcessorFunction = new lambdaNode.NodejsFunction(
       this,
@@ -49,10 +41,10 @@ export class VideoProcessingStack extends Stack {
         memorySize: 3008, // Maximum memory for better performance
         timeout: Duration.minutes(15), // Maximum timeout for Lambda
         architecture: lambda.Architecture.X86_64,
-        layers: [ffmpegLayer],
+        // No layers - using bundled FFmpeg binary instead
         environment: {
           NODE_OPTIONS: "--max-old-space-size=2048",
-          FFMPEG_PATH: "/opt/bin/ffmpeg", // Path from the layer
+          FFMPEG_PATH: "./ffmpeg", // Path to bundled binary
           VIDEO_PROCESSING_BUCKET: props.bucketName,
           LOG_LEVEL: "INFO",
         },
