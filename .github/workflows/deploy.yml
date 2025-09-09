@@ -69,14 +69,14 @@ jobs:
       - name: Install CDK CLI
         run: npm i -g aws-cdk@2 && cdk --version
 
-      - name: CDK Bootstrap (if needed)
+      - name: CDK Bootstrap (force)
         run: |
-          if ! aws cloudformation describe-stacks --stack-name CDKToolkit --region "${{ env.AWS_REGION }}" >/dev/null 2>&1; then
-            echo "Bootstrapping CDK..."
-            cdk bootstrap
-          else
-            echo "CDK already bootstrapped"
-          fi
+          echo "Re-bootstrapping CDK to create missing assets bucket..."
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "Account ID: $ACCOUNT_ID"
+          echo "Region: ${{ env.AWS_REGION }}"
+          cdk bootstrap --force --verbose
+          echo "Bootstrap completed successfully"
 
       - name: CDK Synth
         run: cdk synth --context environment=production
