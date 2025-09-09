@@ -226,7 +226,7 @@ export class VideoProcessingStack extends Stack {
     new cdk.CfnOutput(this, "ExpectedHLSOutputUrl", {
       value: `https://${this.processingBucket.bucketName}.s3.amazonaws.com/${
         props.bucketPrefix || ""
-      }your-video/index.m3u8`,
+      }your-video.m3u8`,
       description:
         "Expected URL pattern for HLS master playlist after processing",
     });

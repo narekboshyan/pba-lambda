@@ -93,10 +93,11 @@ async function processVideoToHLS(
   const videoDirectory = path.dirname(videoKey);
   const tempInputPath = `/tmp/${videoName}_${Date.now()}.mp4`;
   const tempOutputDirectory = `/tmp/hls_output_${Date.now()}`;
+  const segmentsDir = path.join(tempOutputDirectory, 'segments');
 
   try {
     // Create temporary directory structure
-    await createTemporaryDirectories(tempOutputDirectory);
+    await createTemporaryDirectories(tempOutputDirectory, segmentsDir);
 
     // Download source video from S3
     console.log(`📥 Downloading video: ${videoKey}`);
@@ -110,6 +111,7 @@ async function processVideoToHLS(
     await generateMultiQualityHLS(
       tempInputPath,
       tempOutputDirectory,
+      segmentsDir,
       videoName
     );
 
@@ -149,15 +151,11 @@ async function processVideoToHLS(
 }
 
 async function createTemporaryDirectories(
-  baseOutputDir: string
+  baseOutputDir: string,
+  segmentsDir: string
 ): Promise<void> {
-  const qualityDirectories = ["480p", "720p", "1080p"];
-
   await fs.mkdir(baseOutputDir, { recursive: true });
-
-  for (const quality of qualityDirectories) {
-    await fs.mkdir(path.join(baseOutputDir, quality), { recursive: true });
-  }
+  await fs.mkdir(segmentsDir, { recursive: true });
 
   console.log("📁 Created temporary directories");
 }
@@ -203,6 +201,7 @@ async function validateFFmpegBinary(): Promise<void> {
 async function generateMultiQualityHLS(
   inputVideoPath: string,
   outputBaseDir: string,
+  segmentsDir: string,
   videoName: string
 ): Promise<void> {
   const videoQualities: VideoQuality[] = [
@@ -237,7 +236,7 @@ async function generateMultiQualityHLS(
 
   // Generate each quality rendition
   for (const quality of videoQualities) {
-    await generateSingleQualityHLS(inputVideoPath, outputBaseDir, quality);
+    await generateSingleQualityHLS(inputVideoPath, outputBaseDir, segmentsDir, videoName, quality);
   }
 
   // Create adaptive streaming master playlist
@@ -247,10 +246,10 @@ async function generateMultiQualityHLS(
 async function generateSingleQualityHLS(
   inputPath: string,
   outputBaseDir: string,
+  segmentsDir: string,
+  videoName: string,
   quality: VideoQuality
 ): Promise<void> {
-  const qualityOutputDir = path.join(outputBaseDir, quality.name);
-
   console.log(`🔄 Generating ${quality.name} HLS rendition...`);
 
   const ffmpegCommand = `${FFMPEG_PATH} -i "${inputPath}" -y \
@@ -260,8 +259,8 @@ async function generateSingleQualityHLS(
     -c:a aac -b:a ${quality.audioBitrate} -ac 2 \
     -hls_time 6 \
     -hls_playlist_type vod \
-    -hls_segment_filename "${qualityOutputDir}/segment_%03d.ts" \
-    "${qualityOutputDir}/${quality.name}.m3u8"`;
+    -hls_segment_filename "${segmentsDir}/${videoName}_${quality.name}_%03d.ts" \
+    "${outputBaseDir}/${videoName}_${quality.name}.m3u8"`;
 
   try {
     execSync(ffmpegCommand.replace(/\s+/g, " ").trim(), {
@@ -284,13 +283,13 @@ async function createAdaptiveMasterPlaylist(
 #EXT-X-VERSION:3
 
 #EXT-X-STREAM-INF:BANDWIDTH=1128000,RESOLUTION=854x480,CODECS="avc1.42e01e,mp4a.40.2"
-480p/480p.m3u8
+${videoName}_480p.m3u8
 
 #EXT-X-STREAM-INF:BANDWIDTH=2628000,RESOLUTION=1280x720,CODECS="avc1.42e01e,mp4a.40.2"
-720p/720p.m3u8
+${videoName}_720p.m3u8
 
 #EXT-X-STREAM-INF:BANDWIDTH=5192000,RESOLUTION=1920x1080,CODECS="avc1.42e01f,mp4a.40.2"
-1080p/1080p.m3u8
+${videoName}_1080p.m3u8
 `;
 
   const masterPlaylistPath = path.join(outputBaseDir, `${videoName}.m3u8`);
@@ -337,21 +336,25 @@ async function uploadHLSFilesToS3(
 
   // Upload master playlist
   const masterPlaylistLocalPath = path.join(localOutputDir, `${videoName}.m3u8`);
-  const masterPlaylistS3Key = `${originalVideoDir}/${videoName}/${videoName}.m3u8`;
+  const masterPlaylistS3Key = `${originalVideoDir}/${videoName}.m3u8`;
   await uploadSingleFile(masterPlaylistLocalPath, masterPlaylistS3Key);
 
-  // Upload all quality renditions
+  // Upload quality-specific playlists
   const supportedQualities = ["480p", "720p", "1080p"];
-
   for (const qualityLevel of supportedQualities) {
-    const qualityLocalDir = path.join(localOutputDir, qualityLevel);
-    const qualityFiles = await fs.readdir(qualityLocalDir);
+    const qualityPlaylistPath = path.join(localOutputDir, `${videoName}_${qualityLevel}.m3u8`);
+    const qualityPlaylistS3Key = `${originalVideoDir}/${videoName}_${qualityLevel}.m3u8`;
+    await uploadSingleFile(qualityPlaylistPath, qualityPlaylistS3Key);
+  }
 
-    for (const qualityFile of qualityFiles) {
-      const localFilePath = path.join(qualityLocalDir, qualityFile);
-      const s3ObjectKey = `${originalVideoDir}/${videoName}/${qualityLevel}/${qualityFile}`;
-      await uploadSingleFile(localFilePath, s3ObjectKey);
-    }
+  // Upload all segment files
+  const segmentsLocalDir = path.join(localOutputDir, 'segments');
+  const segmentFiles = await fs.readdir(segmentsLocalDir);
+
+  for (const segmentFile of segmentFiles) {
+    const localFilePath = path.join(segmentsLocalDir, segmentFile);
+    const s3ObjectKey = `${originalVideoDir}/${segmentFile}`;
+    await uploadSingleFile(localFilePath, s3ObjectKey);
   }
 
   return uploadedFileKeys;
@@ -362,7 +365,7 @@ function constructMasterPlaylistUrl(
   videoDirectory: string,
   videoName: string
 ): string {
-  return `https://${bucketName}.s3.amazonaws.com/${videoDirectory}/${videoName}/${videoName}.m3u8`;
+  return `https://${bucketName}.s3.amazonaws.com/${videoDirectory}/${videoName}.m3u8`;
 }
 
 function determineContentType(filePath: string): string {
