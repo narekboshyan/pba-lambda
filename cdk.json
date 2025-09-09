@@ -1,6 +1,3 @@
 {
-  "app": "npx ts-node --prefer-ts-exts bin/app.ts",
-  "context": {
-    "@aws-cdk/core:fileAssetsBucketName": "cdk-bootstrap-assets-891377116317-us-east-1-v2"
-  }
+  "app": "npx ts-node --prefer-ts-exts bin/app.ts"
 }

@@ -6,7 +6,7 @@ const app = new cdk.App();
 
 // Your specific configuration
 const environment = "production";
-const bucketName = "pba-test-convert";
+const bucketName = "pba-test-mediaconvert";
 const bucketPrefix = "Level-8/";
 
 // Create the stack
