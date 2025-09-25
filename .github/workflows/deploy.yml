@@ -69,27 +69,59 @@ jobs:
       - name: Install CDK CLI
         run: npm i -g aws-cdk@2 && cdk --version
 
-      - name: CDK Bootstrap (force)
+      - name: CDK Bootstrap (with existing bucket handling)
         run: |
           set -e  # Exit on any error
           echo "=== CDK Bootstrap Debug Info ==="
           echo "Current AWS Region: ${{ env.AWS_REGION }}"
           echo "Current working directory: $(pwd)"
-          
+
           echo "=== Checking AWS credentials ==="
           aws sts get-caller-identity || exit 1
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           echo "Account ID: $ACCOUNT_ID"
-          
+
           echo "=== Checking existing CDK bootstrap ==="
-          aws cloudformation describe-stacks --stack-name CDKToolkit --region "${{ env.AWS_REGION }}" || echo "CDKToolkit stack not found"
-          
+          if aws cloudformation describe-stacks --stack-name CDKToolkit --region "${{ env.AWS_REGION }}" 2>/dev/null; then
+            echo "CDKToolkit stack already exists - checking if it's healthy"
+            STACK_STATUS=$(aws cloudformation describe-stacks --stack-name CDKToolkit --region "${{ env.AWS_REGION }}" --query 'Stacks[0].StackStatus' --output text)
+            echo "Stack status: $STACK_STATUS"
+
+            if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]] || [[ "$STACK_STATUS" == "CREATE_FAILED" ]]; then
+              echo "Stack is in failed state - deleting it first"
+              aws cloudformation delete-stack --stack-name CDKToolkit --region "${{ env.AWS_REGION }}"
+              echo "Waiting for stack deletion to complete..."
+              aws cloudformation wait stack-delete-complete --stack-name CDKToolkit --region "${{ env.AWS_REGION }}"
+              echo "Stack deleted successfully"
+            elif [[ "$STACK_STATUS" == "CREATE_COMPLETE" ]] || [[ "$STACK_STATUS" == "UPDATE_COMPLETE" ]]; then
+              echo "CDK is already bootstrapped successfully - skipping bootstrap"
+              exit 0
+            fi
+          else
+            echo "CDKToolkit stack not found - will create new one"
+          fi
+
+          echo "=== Checking for orphaned S3 bucket ==="
+          BUCKET_NAME="cdk-hnb659fds-assets-${ACCOUNT_ID}-${{ env.AWS_REGION }}"
+          if aws s3 ls "s3://$BUCKET_NAME" 2>/dev/null; then
+            echo "Found existing CDK assets bucket: $BUCKET_NAME"
+            echo "This is likely from a previous failed bootstrap - cleaning it up"
+
+            # Empty the bucket first
+            aws s3 rm "s3://$BUCKET_NAME" --recursive || true
+
+            # Delete the bucket
+            aws s3 rb "s3://$BUCKET_NAME" || true
+
+            echo "Cleaned up orphaned CDK assets bucket"
+          fi
+
           echo "=== Starting CDK Bootstrap ==="
-          cdk bootstrap --force --verbose --debug
-          
+          cdk bootstrap --verbose
+
           echo "=== Verifying bootstrap success ==="
           aws cloudformation describe-stacks --stack-name CDKToolkit --region "${{ env.AWS_REGION }}"
-          
+
           echo "=== Bootstrap completed successfully ==="
 
       - name: CDK Synth
@@ -104,17 +136,17 @@ jobs:
 
       - name: Verify Bootstrap Assets
         run: |
-          echo "=== Verifying CDK assets bucket exists ==="
+          echo "=== Final verification of CDK assets bucket ==="
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           BUCKET_NAME="cdk-hnb659fds-assets-${ACCOUNT_ID}-${{ env.AWS_REGION }}"
           echo "Expected bucket name: $BUCKET_NAME"
-          
+
           if aws s3 ls "s3://$BUCKET_NAME" >/dev/null 2>&1; then
-            echo "✅ Assets bucket exists: $BUCKET_NAME"
+            echo "✅ Assets bucket exists and is accessible: $BUCKET_NAME"
           else
             echo "❌ Assets bucket missing: $BUCKET_NAME"
-            echo "Re-running bootstrap..."
-            cdk bootstrap --force --verbose
+            echo "This is unexpected after successful bootstrap"
+            exit 1
           fi
 
       - name: CDK Deploy
