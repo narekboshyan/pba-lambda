@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HLS Adaptive Streaming Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .video-container {
+            margin: 20px 0;
+        }
+        .controls {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .info {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 5px;
+        }
+        .error {
+            color: red;
+            background: #ffe6e6;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .success {
+            color: green;
+            background: #e6ffe6;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        input[type="text"] {
+            width: 500px;
+            padding: 5px;
+            margin: 5px;
+        }
+        button {
+            padding: 8px 15px;
+            margin: 5px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 3px;
+            padding: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎬 HLS Adaptive Streaming Test</h1>
+    
+    <div class="video-container">
+        <video id="video" controls width="800" height="450" crossorigin="anonymous"></video>
+    </div>
+    
+    <div class="controls">
+        <label for="videoUrl">HLS URL:</label><br>
+        <input type="text" id="videoUrl" placeholder="https://your-bucket.s3.region.amazonaws.com/path/video.m3u8">
+        <button onclick="loadVideo()">🎬 Load Video</button>
+        <button onclick="testS3Url()">🧪 Test S3 URL</button>
+        <button onclick="clearLog()">🧹 Clear Log</button>
+        
+        <div style="margin-top: 10px;">
+            <strong>Quick Test URLs:</strong><br>
+            <button onclick="loadTestUrl('s3')">🔗 S3 URL (1742584680884)</button>
+            <button onclick="loadTestUrl('sample')">🎥 Sample HLS Stream</button>
+        </div>
+    </div>
+    
+    <div id="status"></div>
+    
+    <div class="info">
+        <h3>📊 Stream Information:</h3>
+        <p><strong>Status:</strong> <span id="streamStatus">Not loaded</span></p>
+        <p><strong>Current Quality:</strong> <span id="quality">N/A</span></p>
+        <p><strong>Available Levels:</strong></p>
+        <ul id="levels"></ul>
+    </div>
+
+    <div class="info">
+        <h3>📜 Debug Log:</h3>
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        let hls;
+        const video = document.getElementById('video');
+        const logDiv = document.getElementById('log');
+        const statusDiv = document.getElementById('status');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}`;
+            console.log(logEntry);
+            
+            const p = document.createElement('div');
+            p.textContent = logEntry;
+            p.style.color = type === 'error' ? 'red' : type === 'success' ? 'green' : 'black';
+            logDiv.appendChild(p);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function showStatus(message, type = 'info') {
+            statusDiv.innerHTML = `<div class="${type}">${message}</div>`;
+            setTimeout(() => statusDiv.innerHTML = '', 5000);
+        }
+
+        function loadTestUrl(type) {
+            const urlInput = document.getElementById('videoUrl');
+            if (type === 's3') {
+                urlInput.value = 'https://pba-test-mediaconvert.s3.us-east-1.amazonaws.com/Level-8/Day-20/Video/1742584680884.m3u8';
+            } else if (type === 'sample') {
+                urlInput.value = 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8';
+            }
+            loadVideo();
+        }
+
+        function testS3Url() {
+            const url = document.getElementById('videoUrl').value;
+            if (!url) {
+                showStatus('❌ Please enter an HLS URL first', 'error');
+                return;
+            }
+
+            log(`Testing URL: ${url}`, 'info');
+            
+            fetch(url, { method: 'HEAD', mode: 'cors' })
+                .then(response => {
+                    if (response.ok) {
+                        log(`✅ URL accessible: ${response.status} ${response.statusText}`, 'success');
+                        log(`Content-Type: ${response.headers.get('content-type')}`, 'info');
+                        showStatus('✅ URL is accessible', 'success');
+                    } else {
+                        log(`❌ URL not accessible: ${response.status} ${response.statusText}`, 'error');
+                        showStatus('❌ URL is not accessible', 'error');
+                    }
+                })
+                .catch(error => {
+                    log(`❌ Network error: ${error.message}`, 'error');
+                    showStatus('❌ Network error - Check CORS configuration', 'error');
+                });
+        }
+
+        function loadVideo() {
+            const url = document.getElementById('videoUrl').value;
+            
+            if (!url) {
+                showStatus('❌ Please enter an HLS URL', 'error');
+                return;
+            }
+
+            // Clear previous instance
+            if (hls) {
+                hls.destroy();
+            }
+
+            log(`Loading video: ${url}`, 'info');
+            document.getElementById('streamStatus').textContent = 'Loading...';
+
+            if (Hls.isSupported()) {
+                hls = new Hls({
+                    debug: false,
+                    enableWorker: true,
+                    xhrSetup: function(xhr, url) {
+                        // Add CORS headers
+                        xhr.setRequestHeader('Access-Control-Allow-Origin', '*');
+                    }
+                });
+                
+                hls.loadSource(url);
+                hls.attachMedia(video);
+                
+                hls.on(Hls.Events.MANIFEST_PARSED, function(event, data) {
+                    log(`✅ Manifest loaded: ${hls.levels.length} quality levels found`, 'success');
+                    document.getElementById('streamStatus').textContent = 'Ready';
+                    updateLevelsInfo();
+                    showStatus('✅ Video loaded successfully', 'success');
+                });
+                
+                hls.on(Hls.Events.LEVEL_SWITCHED, function(event, data) {
+                    log(`Quality switched to level ${data.level}`, 'info');
+                    updateCurrentQuality(data.level);
+                });
+
+                hls.on(Hls.Events.ERROR, function(event, data) {
+                    const errorMsg = `HLS Error: ${data.type} - ${data.details}`;
+                    log(`❌ ${errorMsg}`, 'error');
+                    document.getElementById('streamStatus').textContent = 'Error';
+                    showStatus('❌ ' + errorMsg, 'error');
+                });
+                
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                // Native HLS support (Safari)
+                video.src = url;
+                log('✅ Using native HLS support', 'success');
+                document.getElementById('streamStatus').textContent = 'Ready (Native)';
+                showStatus('✅ Using native HLS support', 'success');
+            } else {
+                const errorMsg = 'HLS is not supported in this browser';
+                log(`❌ ${errorMsg}`, 'error');
+                showStatus('❌ ' + errorMsg, 'error');
+            }
+        }
+        
+        function updateLevelsInfo() {
+            const levelsList = document.getElementById('levels');
+            levelsList.innerHTML = '';
+            
+            if (hls && hls.levels) {
+                hls.levels.forEach((level, index) => {
+                    const li = document.createElement('li');
+                    li.textContent = `Level ${index}: ${level.width}x${level.height} @ ${Math.round(level.bitrate/1000)}kbps`;
+                    levelsList.appendChild(li);
+                });
+            }
+        }
+        
+        function updateCurrentQuality(levelIndex) {
+            const qualityDiv = document.getElementById('quality');
+            if (hls && hls.levels && hls.levels[levelIndex]) {
+                const level = hls.levels[levelIndex];
+                qualityDiv.textContent = `${level.width}x${level.height} @ ${Math.round(level.bitrate/1000)}kbps (Level ${levelIndex})`;
+            }
+        }
+
+        function clearLog() {
+            logDiv.innerHTML = '';
+        }
+        
+        // Auto-load S3 URL on page load
+        window.onload = function() {
+            log('🎬 HLS Test Player loaded', 'info');
+            log('💡 Tip: If you get CORS errors, run ./fix-s3-cors.sh first', 'info');
+            loadTestUrl('s3');
+        };
+
+        // Video event listeners
+        video.addEventListener('loadstart', () => log('📡 Loading started', 'info'));
+        video.addEventListener('canplay', () => log('✅ Video can start playing', 'success'));
+        video.addEventListener('error', (e) => log(`❌ Video error: ${e.message}`, 'error'));
+    </script>
+</body>
+</html>

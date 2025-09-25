@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HLS Adaptive Streaming Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+</head>
+<body>
+    <h1>HLS Adaptive Streaming Test</h1>
+    <video id="video" controls width="800" height="450"></video>
+    
+    <div style="margin-top: 20px;">
+        <label for="videoUrl">HLS URL:</label>
+        <input type="text" id="videoUrl" placeholder="http://localhost:8000/your-video.m3u8" style="width: 400px;">
+        <button onclick="loadVideo()">Load Video</button>
+    </div>
+    
+    <div id="info" style="margin-top: 20px; padding: 10px; background: #f0f0f0;">
+        <h3>Current Quality Level:</h3>
+        <p id="quality">Not loaded</p>
+        <h3>Available Levels:</h3>
+        <ul id="levels"></ul>
+    </div>
+
+    <script>
+        let hls;
+        const video = document.getElementById('video');
+        
+        function loadVideo() {
+            const url = document.getElementById('videoUrl').value;
+            
+            if (Hls.isSupported()) {
+                hls = new Hls({
+                    debug: true
+                });
+                
+                hls.loadSource(url);
+                hls.attachMedia(video);
+                
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    console.log('Manifest loaded, found ' + hls.levels.length + ' quality levels');
+                    updateLevelsInfo();
+                });
+                
+                hls.on(Hls.Events.LEVEL_SWITCHED, function(event, data) {
+                    console.log('Quality switched to level ' + data.level);
+                    updateCurrentQuality(data.level);
+                });
+                
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = url;
+            } else {
+                alert('HLS is not supported in this browser');
+            }
+        }
+        
+        function updateLevelsInfo() {
+            const levelsList = document.getElementById('levels');
+            levelsList.innerHTML = '';
+            
+            hls.levels.forEach((level, index) => {
+                const li = document.createElement('li');
+                li.textContent = `Level ${index}: ${level.width}x${level.height} @ ${level.bitrate}bps`;
+                levelsList.appendChild(li);
+            });
+        }
+        
+        function updateCurrentQuality(levelIndex) {
+            const qualityDiv = document.getElementById('quality');
+            if (hls.levels[levelIndex]) {
+                const level = hls.levels[levelIndex];
+                qualityDiv.textContent = `${level.width}x${level.height} @ ${level.bitrate}bps (Level ${levelIndex})`;
+            }
+        }
+        
+        // Auto-load if URL is in the input
+        window.onload = function() {
+            const urlInput = document.getElementById('videoUrl');
+            urlInput.value = 'http://localhost:8000/1742584680884.m3u8';
+        };
+    </script>
+</body>
+</html>

@@ -37,13 +37,13 @@ interface VideoQuality {
   crf: number;
 }
 
+// Lambda handler - Exact implementation of batch-convert-keep-structure.sh
 export const handler = async (
   event: S3Event
 ): Promise<{ results: VideoProcessingResult[] }> => {
-  console.log(
-    "Video processing event received:",
-    JSON.stringify(event, null, 2)
-  );
+  console.log("🎬 Converting MP4s to HLS - Keeping Original Structure (Lambda Version)");
+  console.log("📋 Event received:", JSON.stringify(event, null, 2));
+
   const processingResults: VideoProcessingResult[] = [];
 
   for (const s3Record of event.Records) {
@@ -53,27 +53,30 @@ export const handler = async (
       s3Record.s3.object.key.replace(/\+/g, " ")
     );
 
+    console.log(`🪣 Bucket: ${sourceBucket}`);
+    console.log(`📂 Processing: ${sourceKey}`);
+
     // Filter for .mp4 files only
     if (!sourceKey.toLowerCase().endsWith(".mp4")) {
-      console.log(`Skipping ${sourceKey} - not an MP4 file`);
+      console.log(`⏭️ Skipping ${sourceKey} - not an MP4 file`);
       continue;
     }
 
     try {
-      console.log(`🎬 Starting video processing for: ${sourceKey}`);
-      const result = await processVideoToHLS(sourceBucket, sourceKey);
+      console.log(`🎬 [${path.basename(sourceKey, ".mp4")}] Converting...`);
+      const result = await convertMp4ToHls(sourceBucket, sourceKey);
       result.processingTimeMs = Date.now() - startTime;
       processingResults.push(result);
-      console.log(
-        `✅ Completed processing ${sourceKey} in ${result.processingTimeMs}ms`
-      );
+
+      console.log(`✅ [${result.videoName}] Complete! ${result.masterPlaylistUrl}`);
     } catch (error) {
-      console.error(`❌ Error processing ${sourceKey}:`, error);
+      const videoName = path.basename(sourceKey, ".mp4");
+      console.error(`❌ [${videoName}] Processing failed:`, error);
       processingResults.push({
         inputKey: sourceKey,
         outputFiles: [],
         masterPlaylistUrl: "",
-        videoName: path.basename(sourceKey, ".mp4"),
+        videoName,
         outputDirectory: "",
         error: error instanceof Error ? error.message : String(error),
         success: false,
@@ -82,98 +85,110 @@ export const handler = async (
     }
   }
 
+  console.log("🎉 All conversions completed!");
+  console.log("📁 Structure maintained - HLS files are alongside original MP4s");
+  console.log("🔗 Each video now has a master playlist: VIDEO_NAME.m3u8");
+
   return { results: processingResults };
 };
 
-async function processVideoToHLS(
-  bucketName: string,
-  videoKey: string
+// Convert MP4 to HLS - Exact implementation of bash script convert_mp4_to_hls function
+async function convertMp4ToHls(
+  bucket: string,
+  s3Key: string
 ): Promise<VideoProcessingResult> {
-  const videoName = path.basename(videoKey, ".mp4");
-  const videoDirectory = path.dirname(videoKey);
-  const tempInputPath = `/tmp/${videoName}_${Date.now()}.mp4`;
-  const tempOutputDirectory = `/tmp/hls_output_${Date.now()}`;
-  const segmentsDir = path.join(tempOutputDirectory, 'segments');
+  const videoDir = path.dirname(s3Key);
+  const videoName = path.basename(s3Key, ".mp4");
+  const tempInput = `/tmp/${videoName}_${Date.now()}_${process.pid}.mp4`;
+  const tempOutput = `/tmp/${videoName}_hls_${process.pid}`;
 
   try {
-    // Create temporary directory structure
-    await createTemporaryDirectories(tempOutputDirectory, segmentsDir);
+    // Download MP4 (same as bash script)
+    console.log(`📥 [${videoName}] Downloading...`);
+    await downloadMp4FromS3(bucket, s3Key, tempInput);
 
-    // Download source video from S3
-    console.log(`📥 Downloading video: ${videoKey}`);
-    await downloadVideoFromS3(bucketName, videoKey, tempInputPath);
+    // Create temp output directory
+    await fs.mkdir(tempOutput, { recursive: true });
 
-    // Validate FFmpeg availability
+    // Validate FFmpeg
     await validateFFmpegBinary();
 
-    // Generate HLS renditions for multiple qualities
-    console.log("🔄 Generating HLS renditions...");
-    await generateMultiQualityHLS(
-      tempInputPath,
-      tempOutputDirectory,
-      segmentsDir,
-      videoName
-    );
+    // Generate 480p (exact bash script command)
+    await generateQualityHLS(tempInput, tempOutput, videoName, {
+      name: "480p",
+      width: 854,
+      height: 480,
+      videoBitrate: "1000k",
+      audioBitrate: "128k",
+      bufferSize: "2000k",
+      crf: 23,
+    });
 
-    // Upload all generated HLS files to S3
-    console.log("📤 Uploading HLS files to S3...");
-    const uploadedFilesList = await uploadHLSFilesToS3(
-      bucketName,
-      videoDirectory,
-      tempOutputDirectory,
-      videoName
-    );
+    // Generate 720p (exact bash script command)
+    await generateQualityHLS(tempInput, tempOutput, videoName, {
+      name: "720p",
+      width: 1280,
+      height: 720,
+      videoBitrate: "2500k",
+      audioBitrate: "128k",
+      bufferSize: "5000k",
+      crf: 21,
+    });
 
-    // Generate public URL for master playlist
-    const masterPlaylistUrl = constructMasterPlaylistUrl(
-      bucketName,
-      videoDirectory,
-      videoName
-    );
+    // Generate 1080p (exact bash script command)
+    await generateQualityHLS(tempInput, tempOutput, videoName, {
+      name: "1080p",
+      width: 1920,
+      height: 1080,
+      videoBitrate: "5000k",
+      audioBitrate: "192k",
+      bufferSize: "10000k",
+      crf: 20,
+    });
 
-    // Clean up temporary files
-    await cleanupTemporaryFiles(tempInputPath, tempOutputDirectory);
+    // Create master playlist (exact same as bash script)
+    await createMasterPlaylist(tempOutput, videoName);
+
+    // Upload HLS files to the SAME directory as the original MP4
+    console.log(`📤 [${videoName}] Uploading HLS files...`);
+    const uploadedFiles = await uploadHlsFiles(bucket, videoDir, tempOutput, videoName);
+
+    // Cleanup (same as bash script)
+    await cleanupFiles(tempInput, tempOutput);
+
+    const masterPlaylistUrl = `https://${bucket}.s3.us-east-1.amazonaws.com/${videoDir}/${videoName}.m3u8`;
 
     return {
-      inputKey: videoKey,
-      outputFiles: uploadedFilesList,
+      inputKey: s3Key,
+      outputFiles: uploadedFiles,
       masterPlaylistUrl,
       videoName,
-      outputDirectory: `${videoDirectory}/${videoName}`,
+      outputDirectory: videoDir,
       success: true,
-      processingTimeMs: 0, // Will be set by caller
+      processingTimeMs: 0, // Set by caller
     };
   } catch (error) {
-    // Clean up on error
-    await cleanupTemporaryFiles(tempInputPath, tempOutputDirectory);
+    // Cleanup on error
+    await cleanupFiles(tempInput, tempOutput);
     throw error;
   }
 }
 
-async function createTemporaryDirectories(
-  baseOutputDir: string,
-  segmentsDir: string
-): Promise<void> {
-  await fs.mkdir(baseOutputDir, { recursive: true });
-  await fs.mkdir(segmentsDir, { recursive: true });
-
-  console.log("📁 Created temporary directories");
-}
-
-async function downloadVideoFromS3(
-  bucketName: string,
-  videoKey: string,
+// Download MP4 from S3 (same as bash: aws s3 cp)
+async function downloadMp4FromS3(
+  bucket: string,
+  s3Key: string,
   localPath: string
 ): Promise<void> {
   const getObjectCommand = new GetObjectCommand({
-    Bucket: bucketName,
-    Key: videoKey,
+    Bucket: bucket,
+    Key: s3Key,
   });
 
   const s3Response = await s3Client.send(getObjectCommand);
 
   if (!s3Response.Body) {
-    throw new Error("Empty response body from S3");
+    throw new Error(`❌ Download failed - empty response body`);
   }
 
   const fileWriteStream = createWriteStream(localPath);
@@ -187,99 +202,70 @@ async function downloadVideoFromS3(
   });
 }
 
+
+// Validate FFmpeg binary availability
 async function validateFFmpegBinary(): Promise<void> {
   try {
     await fs.access(FFMPEG_PATH, fs.constants.F_OK | fs.constants.X_OK);
     console.log("✅ FFmpeg binary validated and executable");
   } catch (error) {
     throw new Error(
-      `FFmpeg binary not found or not executable at ${FFMPEG_PATH}`
+      `❌ FFmpeg binary not found or not executable at ${FFMPEG_PATH}`
     );
   }
 }
 
-async function generateMultiQualityHLS(
-  inputVideoPath: string,
-  outputBaseDir: string,
-  segmentsDir: string,
-  videoName: string
-): Promise<void> {
-  const videoQualities: VideoQuality[] = [
-    {
-      name: "480p",
-      width: 854,
-      height: 480,
-      videoBitrate: "1000k",
-      audioBitrate: "128k",
-      bufferSize: "2000k",
-      crf: 23,
-    },
-    {
-      name: "720p",
-      width: 1280,
-      height: 720,
-      videoBitrate: "2500k",
-      audioBitrate: "128k",
-      bufferSize: "5000k",
-      crf: 21,
-    },
-    {
-      name: "1080p",
-      width: 1920,
-      height: 1080,
-      videoBitrate: "5000k",
-      audioBitrate: "192k",
-      bufferSize: "10000k",
-      crf: 20,
-    },
-  ];
-
-  // Generate each quality rendition
-  for (const quality of videoQualities) {
-    await generateSingleQualityHLS(inputVideoPath, outputBaseDir, segmentsDir, videoName, quality);
-  }
-
-  // Create adaptive streaming master playlist
-  await createAdaptiveMasterPlaylist(outputBaseDir, videoName);
-}
-
-async function generateSingleQualityHLS(
+// Generate HLS for single quality (exact bash script ffmpeg command)
+async function generateQualityHLS(
   inputPath: string,
-  outputBaseDir: string,
-  segmentsDir: string,
+  outputDir: string,
   videoName: string,
   quality: VideoQuality
 ): Promise<void> {
   console.log(`🔄 Generating ${quality.name} HLS rendition...`);
 
-  const ffmpegCommand = `${FFMPEG_PATH} -i "${inputPath}" -y \
-    -vf "scale=${quality.width}:${quality.height}:force_original_aspect_ratio=decrease,pad=${quality.width}:${quality.height}:(ow-iw)/2:(oh-ih)/2" \
-    -c:v libx264 -preset medium -crf ${quality.crf} \
-    -maxrate ${quality.videoBitrate} -bufsize ${quality.bufferSize} \
-    -c:a aac -b:a ${quality.audioBitrate} -ac 2 \
-    -hls_time 6 \
-    -hls_playlist_type vod \
-    -hls_segment_filename "${segmentsDir}/${videoName}_${quality.name}_%03d.ts" \
-    "${outputBaseDir}/${videoName}_${quality.name}.m3u8"`;
+  // Exact FFmpeg command from bash script
+  const ffmpegCommand = [
+    FFMPEG_PATH,
+    "-i", `"${inputPath}"`,
+    "-y",
+    "-vf", `"scale=${quality.width}:${quality.height}:force_original_aspect_ratio=decrease,pad=${quality.width}:${quality.height}:(ow-iw)/2:(oh-ih)/2"`,
+    "-c:v", "libx264",
+    "-preset", "fast",
+    "-crf", quality.crf.toString(),
+    "-maxrate", quality.videoBitrate,
+    "-bufsize", quality.bufferSize,
+    "-c:a", "aac",
+    "-b:a", quality.audioBitrate,
+    "-ac", "2",
+    "-hls_time", "6",
+    "-hls_playlist_type", "vod",
+    "-hls_segment_filename", `"${outputDir}/${videoName}_${quality.name}_%03d.ts"`,
+    `"${outputDir}/${videoName}_${quality.name}.m3u8"`,
+    "-loglevel", "error"
+  ].join(" ");
 
   try {
-    execSync(ffmpegCommand.replace(/\s+/g, " ").trim(), {
-      stdio: "pipe",
-      maxBuffer: 1024 * 1024 * 10, // 10MB buffer
-      timeout: 600000, // 10 minutes timeout per quality
+    execSync(ffmpegCommand, {
+      stdio: ["ignore", "ignore", "ignore"], // Same as bash script 2>/dev/null
+      maxBuffer: 1024 * 1024 * 50,
+      timeout: 600000,
     });
-    console.log(`✅ ${quality.name} HLS rendition completed successfully`);
-  } catch (error) {
+    console.log(`✅ ${quality.name} rendition completed`);
+  } catch (error: any) {
     console.error(`❌ Failed to generate ${quality.name} rendition:`, error);
-    throw new Error(`FFmpeg processing failed for ${quality.name}: ${error}`);
+    throw new Error(`FFmpeg processing failed for ${quality.name}`);
   }
 }
 
-async function createAdaptiveMasterPlaylist(
-  outputBaseDir: string,
+
+// Create master playlist with same name as MP4 (exact bash script cat > EOF)
+async function createMasterPlaylist(
+  outputDir: string,
   videoName: string
 ): Promise<void> {
-  const adaptiveMasterPlaylist = `#EXTM3U
+  // Exact same master playlist as bash script
+  const masterPlaylistContent = `#EXTM3U
 #EXT-X-VERSION:3
 
 #EXT-X-STREAM-INF:BANDWIDTH=1128000,RESOLUTION=854x480,CODECS="avc1.42e01e,mp4a.40.2"
@@ -292,109 +278,85 @@ ${videoName}_720p.m3u8
 ${videoName}_1080p.m3u8
 `;
 
-  const masterPlaylistPath = path.join(outputBaseDir, `${videoName}.m3u8`);
-  await fs.writeFile(masterPlaylistPath, adaptiveMasterPlaylist, "utf8");
-  console.log(`📋 Created adaptive master playlist: ${masterPlaylistPath}`);
+  const masterPlaylistPath = path.join(outputDir, `${videoName}.m3u8`);
+  await fs.writeFile(masterPlaylistPath, masterPlaylistContent, "utf8");
+  console.log(`📋 Created master playlist: ${videoName}.m3u8`);
 }
 
-async function uploadHLSFilesToS3(
-  bucketName: string,
-  originalVideoDir: string,
-  localOutputDir: string,
+// Upload HLS files - Exact same as bash script upload logic
+async function uploadHlsFiles(
+  bucket: string,
+  videoDir: string,
+  tempOutput: string,
   videoName: string
 ): Promise<string[]> {
-  const uploadedFileKeys: string[] = [];
+  const uploadedFiles: string[] = [];
 
-  // Upload single file to S3
-  const uploadSingleFile = async (
-    localFilePath: string,
-    s3ObjectKey: string
-  ): Promise<void> => {
-    const fileContent = await fs.readFile(localFilePath);
-    const contentType = determineContentType(localFilePath);
-
-    const putObjectCommand = new PutObjectCommand({
-      Bucket: bucketName,
-      Key: s3ObjectKey,
+  const uploadFile = async (localPath: string, s3Key: string, contentType: string, cacheControl: string) => {
+    const fileContent = await fs.readFile(localPath);
+    const putCommand = new PutObjectCommand({
+      Bucket: bucket,
+      Key: s3Key,
       Body: fileContent,
       ContentType: contentType,
-      CacheControl: contentType.includes("m3u8")
-        ? "no-cache, no-store, must-revalidate"
-        : "max-age=31536000",
-      Metadata: {
-        "original-video": videoName,
-        "generated-timestamp": new Date().toISOString(),
-        processor: "ffmpeg-lambda",
-        format: "hls",
-      },
+      CacheControl: cacheControl,
     });
 
-    await s3Client.send(putObjectCommand);
-    uploadedFileKeys.push(s3ObjectKey);
-    console.log(`📤 Uploaded: ${s3ObjectKey}`);
+    await s3Client.send(putCommand);
+    uploadedFiles.push(s3Key);
+    console.log(`📤 Uploaded: ${s3Key}`);
   };
 
-  // Upload master playlist
-  const masterPlaylistLocalPath = path.join(localOutputDir, `${videoName}.m3u8`);
-  const masterPlaylistS3Key = `${originalVideoDir}/${videoName}.m3u8`;
-  await uploadSingleFile(masterPlaylistLocalPath, masterPlaylistS3Key);
+  // Upload master playlist (same as bash: aws s3 cp with content-type and cache-control)
+  await uploadFile(
+    path.join(tempOutput, `${videoName}.m3u8`),
+    `${videoDir}/${videoName}.m3u8`,
+    "application/vnd.apple.mpegurl",
+    "no-cache"
+  );
 
-  // Upload quality-specific playlists
-  const supportedQualities = ["480p", "720p", "1080p"];
-  for (const qualityLevel of supportedQualities) {
-    const qualityPlaylistPath = path.join(localOutputDir, `${videoName}_${qualityLevel}.m3u8`);
-    const qualityPlaylistS3Key = `${originalVideoDir}/${videoName}_${qualityLevel}.m3u8`;
-    await uploadSingleFile(qualityPlaylistPath, qualityPlaylistS3Key);
+  // Upload quality playlists (same as bash script loop)
+  const qualities = ["480p", "720p", "1080p"];
+  for (const quality of qualities) {
+    await uploadFile(
+      path.join(tempOutput, `${videoName}_${quality}.m3u8`),
+      `${videoDir}/${videoName}_${quality}.m3u8`,
+      "application/vnd.apple.mpegurl",
+      "no-cache"
+    );
   }
 
-  // Upload all segment files
-  const segmentsLocalDir = path.join(localOutputDir, 'segments');
-  const segmentFiles = await fs.readdir(segmentsLocalDir);
+  // Upload segments (same as bash: aws s3 cp --recursive --exclude "*.m3u8")
+  const files = await fs.readdir(tempOutput);
+  const segmentFiles = files.filter(file => file.endsWith('.ts'));
 
+  console.log(`📦 Uploading ${segmentFiles.length} video segments...`);
   for (const segmentFile of segmentFiles) {
-    const localFilePath = path.join(segmentsLocalDir, segmentFile);
-    const s3ObjectKey = `${originalVideoDir}/${segmentFile}`;
-    await uploadSingleFile(localFilePath, s3ObjectKey);
+    await uploadFile(
+      path.join(tempOutput, segmentFile),
+      `${videoDir}/${segmentFile}`,
+      "video/mp2t",
+      "max-age=31536000"
+    );
   }
 
-  return uploadedFileKeys;
+  return uploadedFiles;
 }
 
-function constructMasterPlaylistUrl(
-  bucketName: string,
-  videoDirectory: string,
-  videoName: string
-): string {
-  return `https://${bucketName}.s3.amazonaws.com/${videoDirectory}/${videoName}.m3u8`;
-}
 
-function determineContentType(filePath: string): string {
-  const fileExtension = path.extname(filePath).toLowerCase();
-  switch (fileExtension) {
-    case ".m3u8":
-      return "application/vnd.apple.mpegurl";
-    case ".ts":
-      return "video/mp2t";
-    default:
-      return "application/octet-stream";
-  }
-}
 
-async function cleanupTemporaryFiles(
-  inputVideoPath: string,
-  outputDirectory: string
+// Cleanup files (same as bash script: rm -rf)
+async function cleanupFiles(
+  tempInput: string,
+  tempOutput: string
 ): Promise<void> {
   try {
-    // Remove downloaded input video
-    await fs.unlink(inputVideoPath).catch(() => {}); // Ignore errors
-
-    // Remove entire output directory tree
-    await fs
-      .rm(outputDirectory, { recursive: true, force: true })
-      .catch(() => {}); // Ignore errors
-
-    console.log("🧹 Cleaned up all temporary files");
+    // Remove temp input file
+    await fs.unlink(tempInput).catch(() => {});
+    // Remove temp output directory
+    await fs.rm(tempOutput, { recursive: true, force: true }).catch(() => {});
+    console.log("🧹 Cleanup completed");
   } catch (error) {
-    console.warn("⚠️ Warning: Could not clean up some temporary files:", error);
+    console.warn("⚠️ Cleanup warning:", error);
   }
 }

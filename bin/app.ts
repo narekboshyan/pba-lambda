@@ -6,8 +6,8 @@ const app = new cdk.App();
 
 // Your specific configuration
 const environment = "production";
-const bucketName = "pba-test-mediaconvert";
-const bucketPrefix = "Level-8/";
+const bucketName = "pba-users-bucket";
+const bucketPrefix = "OnlineCourses/";
 
 // Create the stack
 new VideoProcessingStack(app, "VideoProcessingStack", {
