@@ -129,7 +129,7 @@ export class VideoProcessingStack extends Stack {
   }
 
   private setupS3EventTrigger(bucketPrefix?: string): void {
-    const eventNotificationFilters: any = {
+    const eventNotificationFilters: { suffix: string; prefix?: string } = {
       suffix: ".mp4",
     };
 
@@ -138,48 +138,56 @@ export class VideoProcessingStack extends Stack {
       eventNotificationFilters.prefix = bucketPrefix;
     }
 
-    // Configure S3 to trigger Lambda on MP4 uploads
-    this.processingBucket.addEventNotification(
-      s3.EventType.OBJECT_CREATED,
-      new s3n.LambdaDestination(this.videoProcessorFunction),
+    console.log(
+      "Setting up S3 event trigger with filters:",
       eventNotificationFilters
     );
+
+    try {
+      // Configure S3 to trigger Lambda on MP4 uploads
+      this.processingBucket.addEventNotification(
+        s3.EventType.OBJECT_CREATED,
+        new s3n.LambdaDestination(this.videoProcessorFunction),
+        eventNotificationFilters
+      );
+
+      console.log("✅ S3 event notification configured successfully");
+    } catch (error) {
+      console.error("❌ Failed to configure S3 event notification:", error);
+      throw error;
+    }
   }
 
   private createMonitoringDashboard(): void {
-    const monitoringDashboard = new cloudwatch.Dashboard(
-      this,
-      "VideoProcessingMonitoringDashboard",
-      {
-        dashboardName: `${this.stackName}-Video-Processing-Monitor`,
-        widgets: [
-          [
-            new cloudwatch.GraphWidget({
-              title: "Lambda Function Invocations",
-              left: [this.videoProcessorFunction.metricInvocations()],
-              width: 12,
-            }),
-            new cloudwatch.GraphWidget({
-              title: "Lambda Function Errors",
-              left: [this.videoProcessorFunction.metricErrors()],
-              width: 12,
-            }),
-          ],
-          [
-            new cloudwatch.GraphWidget({
-              title: "Processing Duration",
-              left: [this.videoProcessorFunction.metricDuration()],
-              width: 12,
-            }),
-            new cloudwatch.GraphWidget({
-              title: "Function Throttles",
-              left: [this.videoProcessorFunction.metricThrottles()],
-              width: 12,
-            }),
-          ],
+    new cloudwatch.Dashboard(this, "VideoProcessingMonitoringDashboard", {
+      dashboardName: `${this.stackName}-Video-Processing-Monitor`,
+      widgets: [
+        [
+          new cloudwatch.GraphWidget({
+            title: "Lambda Function Invocations",
+            left: [this.videoProcessorFunction.metricInvocations()],
+            width: 12,
+          }),
+          new cloudwatch.GraphWidget({
+            title: "Lambda Function Errors",
+            left: [this.videoProcessorFunction.metricErrors()],
+            width: 12,
+          }),
         ],
-      }
-    );
+        [
+          new cloudwatch.GraphWidget({
+            title: "Processing Duration",
+            left: [this.videoProcessorFunction.metricDuration()],
+            width: 12,
+          }),
+          new cloudwatch.GraphWidget({
+            title: "Function Throttles",
+            left: [this.videoProcessorFunction.metricThrottles()],
+            width: 12,
+          }),
+        ],
+      ],
+    });
 
     // Create CloudWatch alarms for critical metrics
     new cloudwatch.Alarm(this, "VideoProcessingErrorAlarm", {

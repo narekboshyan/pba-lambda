@@ -1,4 +1,4 @@
-name: Deploy pba-lambda to AWS
+name: Deploy MP4 to HLS Converter to AWS
 
 on:
   push:
@@ -29,6 +29,9 @@ jobs:
       - name: TypeScript check
         run: yarn build
 
+      - name: Lint check
+        run: yarn lint
+
   deploy:
     needs: test
     runs-on: ubuntu-latest
@@ -37,14 +40,6 @@ jobs:
 
     # 👇 this is what "attaches" the job to your Environment
     environment: production
-
-    # expose Environment Variables to shell steps
-    env:
-      INPUT_BUCKET: ${{ vars.INPUT_BUCKET }}
-      OUTPUT_BUCKET: ${{ vars.OUTPUT_BUCKET }}
-      PREFIX: ${{ vars.PREFIX }}
-      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
-      CDK_STACK_NAME: ${{ vars.CDK_STACK_NAME }}
 
     steps:
       - name: Checkout code
@@ -125,13 +120,13 @@ jobs:
           echo "=== Bootstrap completed successfully ==="
 
       - name: CDK Synth
-        run: cdk synth --context environment=production
+        run: yarn synth
 
       - name: CDK Diff
         run: |
           echo "## CDK Diff" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          cdk diff --context environment=production >> $GITHUB_STEP_SUMMARY || true
+          npx cdk diff >> $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Verify Bootstrap Assets
@@ -151,12 +146,9 @@ jobs:
 
       - name: CDK Deploy
         run: |
-          cdk deploy \
+          npx cdk deploy \
             --require-approval never \
-            --context environment=production \
-            --context inputBucket="${INPUT_BUCKET}" \
-            --context outputBucket="${OUTPUT_BUCKET}" \
-            --context prefix="${PREFIX}"
+            VideoProcessingStack
 
       - name: Get deployment outputs
         run: |
@@ -164,7 +156,7 @@ jobs:
           echo "Environment: production" >> $GITHUB_STEP_SUMMARY
           echo "Region: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
           aws cloudformation describe-stacks \
-            --stack-name "${CDK_STACK_NAME:-Mp4ToHlsStack}" \
+            --stack-name VideoProcessingStack \
             --query 'Stacks[0].Outputs' \
             --output table >> $GITHUB_STEP_SUMMARY || true
 
@@ -185,4 +177,4 @@ jobs:
       - name: Notify failure
         run: |
           echo "Deployment failed. Manual cleanup may be required."
-          echo "Check CloudFormation stack: ${CDK_STACK_NAME:-Mp4ToHlsStack}"
+          echo "Check CloudFormation stack: VideoProcessingStack"
