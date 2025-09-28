@@ -11,7 +11,6 @@ import { Readable } from "stream";
 
 const FFMPEG_PATH =
   process.env.FFMPEG_PATH || path.join(process.cwd(), "ffmpeg");
-
 const s3Client = new S3Client({
   region: process.env.AWS_REGION || "us-east-1",
 });
@@ -41,7 +40,9 @@ interface VideoQuality {
 export const handler = async (
   event: S3Event
 ): Promise<{ results: VideoProcessingResult[] }> => {
-  console.log("🎬 Converting MP4s to HLS - Keeping Original Structure (Lambda Version)");
+  console.log(
+    "🎬 Converting MP4s to HLS - Keeping Original Structure (Lambda Version)"
+  );
   console.log("📋 Event received:", JSON.stringify(event, null, 2));
 
   const processingResults: VideoProcessingResult[] = [];
@@ -68,7 +69,9 @@ export const handler = async (
       result.processingTimeMs = Date.now() - startTime;
       processingResults.push(result);
 
-      console.log(`✅ [${result.videoName}] Complete! ${result.masterPlaylistUrl}`);
+      console.log(
+        `✅ [${result.videoName}] Complete! ${result.masterPlaylistUrl}`
+      );
     } catch (error) {
       const videoName = path.basename(sourceKey, ".mp4");
       console.error(`❌ [${videoName}] Processing failed:`, error);
@@ -86,7 +89,9 @@ export const handler = async (
   }
 
   console.log("🎉 All conversions completed!");
-  console.log("📁 Structure maintained - HLS files are alongside original MP4s");
+  console.log(
+    "📁 Structure maintained - HLS files are alongside original MP4s"
+  );
   console.log("🔗 Each video now has a master playlist: VIDEO_NAME.m3u8");
 
   return { results: processingResults };
@@ -151,7 +156,12 @@ async function convertMp4ToHls(
 
     // Upload HLS files to the SAME directory as the original MP4
     console.log(`📤 [${videoName}] Uploading HLS files...`);
-    const uploadedFiles = await uploadHlsFiles(bucket, videoDir, tempOutput, videoName);
+    const uploadedFiles = await uploadHlsFiles(
+      bucket,
+      videoDir,
+      tempOutput,
+      videoName
+    );
 
     // Cleanup (same as bash script)
     await cleanupFiles(tempInput, tempOutput);
@@ -202,7 +212,6 @@ async function downloadMp4FromS3(
   });
 }
 
-
 // Validate FFmpeg binary availability
 async function validateFFmpegBinary(): Promise<void> {
   try {
@@ -227,22 +236,36 @@ async function generateQualityHLS(
   // Exact FFmpeg command from bash script
   const ffmpegCommand = [
     FFMPEG_PATH,
-    "-i", `"${inputPath}"`,
+    "-i",
+    `"${inputPath}"`,
     "-y",
-    "-vf", `"scale=${quality.width}:${quality.height}:force_original_aspect_ratio=decrease,pad=${quality.width}:${quality.height}:(ow-iw)/2:(oh-ih)/2"`,
-    "-c:v", "libx264",
-    "-preset", "fast",
-    "-crf", quality.crf.toString(),
-    "-maxrate", quality.videoBitrate,
-    "-bufsize", quality.bufferSize,
-    "-c:a", "aac",
-    "-b:a", quality.audioBitrate,
-    "-ac", "2",
-    "-hls_time", "6",
-    "-hls_playlist_type", "vod",
-    "-hls_segment_filename", `"${outputDir}/${videoName}_${quality.name}_%03d.ts"`,
+    "-vf",
+    `"scale=${quality.width}:${quality.height}:force_original_aspect_ratio=decrease,pad=${quality.width}:${quality.height}:(ow-iw)/2:(oh-ih)/2"`,
+    "-c:v",
+    "libx264",
+    "-preset",
+    "fast",
+    "-crf",
+    quality.crf.toString(),
+    "-maxrate",
+    quality.videoBitrate,
+    "-bufsize",
+    quality.bufferSize,
+    "-c:a",
+    "aac",
+    "-b:a",
+    quality.audioBitrate,
+    "-ac",
+    "2",
+    "-hls_time",
+    "6",
+    "-hls_playlist_type",
+    "vod",
+    "-hls_segment_filename",
+    `"${outputDir}/${videoName}_${quality.name}_%03d.ts"`,
     `"${outputDir}/${videoName}_${quality.name}.m3u8"`,
-    "-loglevel", "error"
+    "-loglevel",
+    "error",
   ].join(" ");
 
   try {
@@ -257,7 +280,6 @@ async function generateQualityHLS(
     throw new Error(`FFmpeg processing failed for ${quality.name}`);
   }
 }
-
 
 // Create master playlist with same name as MP4 (exact bash script cat > EOF)
 async function createMasterPlaylist(
@@ -292,7 +314,12 @@ async function uploadHlsFiles(
 ): Promise<string[]> {
   const uploadedFiles: string[] = [];
 
-  const uploadFile = async (localPath: string, s3Key: string, contentType: string, cacheControl: string) => {
+  const uploadFile = async (
+    localPath: string,
+    s3Key: string,
+    contentType: string,
+    cacheControl: string
+  ) => {
     const fileContent = await fs.readFile(localPath);
     const putCommand = new PutObjectCommand({
       Bucket: bucket,
@@ -328,7 +355,7 @@ async function uploadHlsFiles(
 
   // Upload segments (same as bash: aws s3 cp --recursive --exclude "*.m3u8")
   const files = await fs.readdir(tempOutput);
-  const segmentFiles = files.filter(file => file.endsWith('.ts'));
+  const segmentFiles = files.filter((file) => file.endsWith(".ts"));
 
   console.log(`📦 Uploading ${segmentFiles.length} video segments...`);
   for (const segmentFile of segmentFiles) {
@@ -342,8 +369,6 @@ async function uploadHlsFiles(
 
   return uploadedFiles;
 }
-
-
 
 // Cleanup files (same as bash script: rm -rf)
 async function cleanupFiles(
