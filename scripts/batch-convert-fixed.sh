@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Batch Convert S3 MP4s to HLS - Keep Original Structure
-# Usage: ./batch-convert-keep-structure.sh bucket prefix
-# Example: ./batch-convert-keep-structure.sh pba-test-mediaconvert Level-8/
+# Batch Convert S3 MP4s to HLS - Keep Original Structure (Fixed for macOS)
+# Usage: ./batch-convert-fixed.sh bucket prefix
+# Example: ./batch-convert-fixed.sh pba-users-bucket OnlineCourses/16
 
 set -e
 
@@ -22,7 +22,7 @@ log_error() { echo -e "${RED}❌ $1${NC}"; }
 
 if [ $# -ne 2 ]; then
     echo "❌ Usage: $0 <bucket> <prefix>"
-    echo "Example: $0 pba-test-mediaconvert Level-8/"
+    echo "Example: $0 pba-users-bucket OnlineCourses/16"
     exit 1
 fi
 
@@ -30,14 +30,14 @@ BUCKET="$1"
 PREFIX="$2"
 PREFIX=$(echo "$PREFIX" | sed 's|/$||') # Remove trailing slash
 
-log_info "🎬 Converting MP4s to HLS - Keeping Original Structure"
+log_info "🎬 Converting MP4s to HLS - Keeping Original Structure (Fixed Version)"
 echo "🪣 Bucket: $BUCKET"
 echo "📂 Prefix: $PREFIX"
 echo ""
 
 # Check dependencies
-if ! command -v ffmpeg &> /dev/null || ! command -v aws &> /dev/null || ! command -v parallel &> /dev/null; then
-    log_error "Missing dependencies. Install: brew install ffmpeg awscli parallel"
+if ! command -v ffmpeg &> /dev/null || ! command -v aws &> /dev/null; then
+    log_error "Missing dependencies. Install: brew install ffmpeg awscli"
     exit 1
 fi
 
@@ -152,12 +152,42 @@ EOF
     return 0
 }
 
-export -f convert_mp4_to_hls
-export BUCKET TEMP_DIR
+# Sequential processing with background jobs (works without GNU parallel)
+log_info "🚀 Starting conversion (sequential with background jobs)..."
 
-# Run parallel conversion
-log_info "🚀 Starting conversion..."
-parallel -j $CONCURRENT_JOBS --progress convert_mp4_to_hls :::: "$MP4_LIST"
+PIDS=()
+ACTIVE_JOBS=0
+
+process_file() {
+    local file="$1"
+    convert_mp4_to_hls "$file" &
+    local pid=$!
+    PIDS+=($pid)
+    ((ACTIVE_JOBS++))
+    
+    # Wait if we've reached max concurrent jobs
+    if [ $ACTIVE_JOBS -ge $CONCURRENT_JOBS ]; then
+        wait ${PIDS[0]}
+        PIDS=("${PIDS[@]:1}")  # Remove first PID
+        ((ACTIVE_JOBS--))
+    fi
+}
+
+# Process each file
+PROCESSED=0
+TOTAL=$(wc -l < "$MP4_LIST")
+
+while IFS= read -r file; do
+    ((PROCESSED++))
+    echo "📋 Processing $PROCESSED/$TOTAL: $(basename "$file" .mp4)"
+    process_file "$file"
+done < "$MP4_LIST"
+
+# Wait for remaining jobs to complete
+log_info "🔄 Waiting for remaining jobs to complete..."
+for pid in "${PIDS[@]}"; do
+    wait $pid
+done
 
 echo ""
 log_success "🎉 All conversions completed!"
